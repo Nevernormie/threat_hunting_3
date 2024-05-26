@@ -1,0 +1,116 @@
+---
+title: "lab3"
+format:   
+  md:
+    output-file: README.md
+editor: visual
+---
+
+# Анализ данных сетевого трафика при помощи библиотеки Arrow
+
+## Цель работы
+
+1.  Изучить возможности технологии Apache Arrow для обработки и анализ больших данных
+2.  Получить навыки применения Arrow совместно с языком программирования R
+3.  Получить навыки анализа метаинфомации о сетевом трафике
+4.  Получить навыки применения облачных технологий хранения, подготовки и анализа данных: Yandex Object Storage, Rstudio Server.
+
+## Ход работы
+
+1.  Подключаемся к облачному серверу RStudio Server с помощбю ssh под нашим user26
+
+    ![](./1.png)
+
+    ![](./2.png)
+
+2.  Выполняем практические задания
+
+## Задание 1: Надите утечку данных из Вашей сети
+
+```{r}
+library(arrow, warn.conflicts = FALSE)
+```
+
+You can add options to executable code like this
+
+```{r}
+library(tidyverse, warn.conflicts = FALSE)
+```
+
+```{r}
+dir.create("data", showWarnings = FALSE)
+
+curl::multi_download(
+  "https://storage.yandexcloud.net/arrow-datasets/tm_data.pqt",
+  "data/testdata",
+  resume = TRUE
+)
+```
+
+```{r}
+dt <- open_dataset(
+  sources = "data/testdata",
+  schema = schema(timestamp=int64(),src=utf8(),dst=utf8(),port=uint32(),bytes=uint32())
+)
+glimpse(dt)
+```
+
+```{r}
+z1 <- dt %>%
+  filter(str_detect(src, "^12.") | str_detect(src, "^13.") | str_detect(src, "^14."))  %>%
+  filter(!str_detect(dst, "^12.") | !str_detect(dst, "^13.") | !str_detect(dst, "^14."))  %>%
+  group_by(src) %>% summarise("sum" = sum(bytes)) %>%  
+  filter(sum>6000000000) %>% select(src,sum) 
+z1 |> collect()
+```
+
+## Задание 2: Надите утечку данных 2
+
+```{r}
+z2 <- dt %>%
+      select(timestamp, src, dst, bytes) %>%
+      mutate(trafic = (str_detect(src, "^((12|13|14)\\.)") & !str_detect(dst, "^((12|13|14)\\.)")),time = hour(as_datetime(timestamp/1000))) %>%
+      filter(trafic == TRUE, time >= 0 & time <= 24) %>% group_by(time) %>%
+      summarise(trafictime = n()) %>% arrange(desc(trafictime))
+z2 |> collect()
+```
+
+```{r}
+z2_2 <- dt %>% mutate(time = hour(as_datetime(timestamp/1000))) %>% 
+  filter(!str_detect(src, "^13.37.84.125")) %>% 
+  filter(str_detect(src, "^12.") | str_detect(src, "^13.") | str_detect(src, "^14."))  %>%
+  filter(!str_detect(dst, "^12.") | !str_detect(dst, "^13.") | !str_detect(dst, "^14."))  %>%
+  filter(time >= 1 & time <= 15) %>% 
+  group_by(src) %>% summarise("sum" = sum(bytes)) %>%
+  filter(sum>290000000) %>% select(src,sum) 
+z2_2 |> collect()
+```
+
+## Задание 3: Надите утечку данных 3
+
+```{r}
+z3 <- dt %>% filter(!str_detect(src, "^13.37.84.125")) %>% 
+  filter(!str_detect(src, "^12.55.77.96")) %>% 
+  filter(str_detect(src, "^12.") | str_detect(src, "^13.") | str_detect(src, "^14."))  %>%
+  filter(!str_detect(dst, "^12.") | !str_detect(dst, "^13.") | !str_detect(dst, "^14."))  %>% select(src, bytes, port) 
+
+
+z3_1 <-z3 %>%  group_by(port) %>% summarise("mean"=mean(bytes), "max"=max(bytes), "sum" = sum(bytes)) %>% 
+  mutate("Raz"= max-mean)  %>% filter(Raz!=0, Raz>170000)
+
+z3_1 |> collect()
+```
+
+```{r}
+z3_2 <- z3  %>% filter(port==37) %>% group_by(src) %>% 
+  summarise("mean"=mean(bytes)) %>% filter(mean>37543) %>% select(src)
+z3_2 |> collect()
+```
+
+## Оценка результатов
+
+Задача выполнена при помощи облачных технологий, приложения RStudio и Apache Arrow, удалось познакомится с функционалом Arrow и при его помощи удалось выполнить задание.
+
+## Вывод
+
+В данной работе я смог познакомиться с применением облачных технологий хранения, подготовки и анализа данных. Удалось проанализировать метаинформацию о сетевом трафике.
